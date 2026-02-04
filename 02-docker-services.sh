@@ -214,7 +214,16 @@ cat > data/conf/nginx/gitea.conf << EOF
 server {
     listen 80;
     server_name $GIT_DOMAIN;
-    return 301 https://\$host\$request_uri;
+    root /web;
+
+    location ^~ /.well-known/acme-challenge/ {
+        allow all;
+        default_type "text/plain";
+    }
+
+    location / {
+        return 301 https://\$host\$request_uri;
+    }
 }
 
 server {
@@ -247,7 +256,16 @@ cat > data/conf/nginx/rocketchat.conf << EOF
 server {
     listen 80;
     server_name $CHAT_DOMAIN;
-    return 301 https://\$host\$request_uri;
+    root /web;
+
+    location ^~ /.well-known/acme-challenge/ {
+        allow all;
+        default_type "text/plain";
+    }
+
+    location / {
+        return 301 https://\$host\$request_uri;
+    }
 }
 
 server {
