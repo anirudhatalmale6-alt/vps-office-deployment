@@ -19,6 +19,7 @@ set -e
 VPS_IP="145.239.93.41"
 MAIL_DOMAIN="mail.malspy.com"
 GIT_DOMAIN="git.malspy.com"
+CHAT_DOMAIN="chat.malspy.com"
 PIHOLE_PORT="8080"            # Pi-hole admin port (avoid conflict with Mailcow)
 # ================================
 
@@ -123,19 +124,103 @@ fi
 
 systemctl restart pihole-FTL
 
-# Block personal email services via Pi-hole
-echo -e "${GREEN}Blocking email services...${NC}"
-pihole deny gmail.com
-pihole deny mail.google.com
-pihole deny accounts.google.com
-pihole deny outlook.com
-pihole deny outlook.live.com
-pihole deny login.microsoftonline.com
-pihole deny login.live.com
-pihole deny yahoo.com
-pihole deny mail.yahoo.com
-pihole deny protonmail.com
-pihole deny proton.me
+# Configure Pi-hole: WHITELIST-ONLY mode
+# Block ALL sites by default, only allow developer-needed sites
+echo -e "${GREEN}Setting up Pi-hole whitelist-only mode...${NC}"
+
+apt install -y sqlite3
+
+DB=/etc/pihole/gravity.db
+
+# Clear existing rules
+sqlite3 $DB "DELETE FROM domainlist;"
+
+# Pi-hole types: 0=exact allow, 1=exact deny, 2=regex allow, 3=regex deny
+
+# Company services
+sqlite3 $DB "INSERT INTO domainlist (type, domain, comment) VALUES (2, '(^|\\.)(malspy\\.com)\$', 'Company domains');"
+sqlite3 $DB "INSERT INTO domainlist (type, domain, comment) VALUES (0, 'malspy.com', 'Company main');"
+sqlite3 $DB "INSERT INTO domainlist (type, domain, comment) VALUES (0, 'mail.malspy.com', 'Company mail');"
+sqlite3 $DB "INSERT INTO domainlist (type, domain, comment) VALUES (0, 'git.malspy.com', 'Company git');"
+sqlite3 $DB "INSERT INTO domainlist (type, domain, comment) VALUES (0, 'chat.malspy.com', 'Company chat');"
+
+# NPM / Node.js (Next.js + Expo)
+sqlite3 $DB "INSERT INTO domainlist (type, domain, comment) VALUES (2, '(^|\\.)(npmjs\\.org|npmjs\\.com)\$', 'NPM');"
+sqlite3 $DB "INSERT INTO domainlist (type, domain, comment) VALUES (2, '(^|\\.)(nodejs\\.org)\$', 'Node.js');"
+sqlite3 $DB "INSERT INTO domainlist (type, domain, comment) VALUES (2, '(^|\\.)(yarnpkg\\.com)\$', 'Yarn');"
+sqlite3 $DB "INSERT INTO domainlist (type, domain, comment) VALUES (2, '(^|\\.)(unpkg\\.com)\$', 'NPM CDN');"
+sqlite3 $DB "INSERT INTO domainlist (type, domain, comment) VALUES (2, '(^|\\.)(pnpm\\.io)\$', 'PNPM');"
+
+# Python / PyPI (Django)
+sqlite3 $DB "INSERT INTO domainlist (type, domain, comment) VALUES (2, '(^|\\.)(pypi\\.org|pythonhosted\\.org)\$', 'PyPI');"
+sqlite3 $DB "INSERT INTO domainlist (type, domain, comment) VALUES (2, '(^|\\.)(python\\.org)\$', 'Python');"
+sqlite3 $DB "INSERT INTO domainlist (type, domain, comment) VALUES (2, '(^|\\.)(pypa\\.io)\$', 'PyPA');"
+
+# GitHub
+sqlite3 $DB "INSERT INTO domainlist (type, domain, comment) VALUES (2, '(^|\\.)(github\\.com|githubusercontent\\.com|github\\.io|githubassets\\.com)\$', 'GitHub');"
+sqlite3 $DB "INSERT INTO domainlist (type, domain, comment) VALUES (2, '(^|\\.)(ghcr\\.io)\$', 'GitHub Container Registry');"
+
+# Stack Overflow
+sqlite3 $DB "INSERT INTO domainlist (type, domain, comment) VALUES (2, '(^|\\.)(stackoverflow\\.com|stackexchange\\.com|sstatic\\.net)\$', 'Stack Overflow');"
+
+# Next.js / Vercel
+sqlite3 $DB "INSERT INTO domainlist (type, domain, comment) VALUES (2, '(^|\\.)(nextjs\\.org|vercel\\.com|vercel\\.app)\$', 'Next.js/Vercel');"
+
+# React
+sqlite3 $DB "INSERT INTO domainlist (type, domain, comment) VALUES (2, '(^|\\.)(reactjs\\.org|react\\.dev)\$', 'React');"
+
+# Expo
+sqlite3 $DB "INSERT INTO domainlist (type, domain, comment) VALUES (2, '(^|\\.)(expo\\.dev|expo\\.io|exp\\.host)\$', 'Expo');"
+
+# Django
+sqlite3 $DB "INSERT INTO domainlist (type, domain, comment) VALUES (2, '(^|\\.)(djangoproject\\.com)\$', 'Django');"
+sqlite3 $DB "INSERT INTO domainlist (type, domain, comment) VALUES (2, '(^|\\.)(django-rest-framework\\.org)\$', 'Django REST');"
+
+# CDNs
+sqlite3 $DB "INSERT INTO domainlist (type, domain, comment) VALUES (2, '(^|\\.)(cloudflare\\.com|cdnjs\\.cloudflare\\.com)\$', 'Cloudflare CDN');"
+sqlite3 $DB "INSERT INTO domainlist (type, domain, comment) VALUES (2, '(^|\\.)(jsdelivr\\.net)\$', 'jsDelivr CDN');"
+sqlite3 $DB "INSERT INTO domainlist (type, domain, comment) VALUES (2, '(^|\\.)(fastly\\.net|fastlylb\\.net)\$', 'Fastly CDN');"
+
+# Docker
+sqlite3 $DB "INSERT INTO domainlist (type, domain, comment) VALUES (2, '(^|\\.)(docker\\.com|docker\\.io)\$', 'Docker');"
+
+# MDN Docs
+sqlite3 $DB "INSERT INTO domainlist (type, domain, comment) VALUES (2, '(^|\\.)(developer\\.mozilla\\.org|mozilla\\.net)\$', 'MDN Docs');"
+
+# Google Fonts & APIs (for web dev)
+sqlite3 $DB "INSERT INTO domainlist (type, domain, comment) VALUES (2, '(^|\\.)(fonts\\.googleapis\\.com|fonts\\.gstatic\\.com)\$', 'Google Fonts');"
+sqlite3 $DB "INSERT INTO domainlist (type, domain, comment) VALUES (2, '(^|\\.)(googleapis\\.com)\$', 'Google APIs');"
+
+# TypeScript, Tailwind, ESLint
+sqlite3 $DB "INSERT INTO domainlist (type, domain, comment) VALUES (2, '(^|\\.)(typescriptlang\\.org)\$', 'TypeScript');"
+sqlite3 $DB "INSERT INTO domainlist (type, domain, comment) VALUES (2, '(^|\\.)(tailwindcss\\.com)\$', 'Tailwind CSS');"
+sqlite3 $DB "INSERT INTO domainlist (type, domain, comment) VALUES (2, '(^|\\.)(eslint\\.org)\$', 'ESLint');"
+
+# Let's Encrypt
+sqlite3 $DB "INSERT INTO domainlist (type, domain, comment) VALUES (2, '(^|\\.)(letsencrypt\\.org)\$', 'Lets Encrypt');"
+
+# Mobile dev (Expo)
+sqlite3 $DB "INSERT INTO domainlist (type, domain, comment) VALUES (2, '(^|\\.)(apple\\.com)\$', 'Apple Dev');"
+sqlite3 $DB "INSERT INTO domainlist (type, domain, comment) VALUES (2, '(^|\\.)(android\\.com|dl\\.google\\.com)\$', 'Android Dev');"
+sqlite3 $DB "INSERT INTO domainlist (type, domain, comment) VALUES (2, '(^|\\.)(gradle\\.org)\$', 'Gradle');"
+
+# Databases
+sqlite3 $DB "INSERT INTO domainlist (type, domain, comment) VALUES (2, '(^|\\.)(postgresql\\.org)\$', 'PostgreSQL');"
+sqlite3 $DB "INSERT INTO domainlist (type, domain, comment) VALUES (2, '(^|\\.)(redis\\.io)\$', 'Redis');"
+
+# AWS / Cloud
+sqlite3 $DB "INSERT INTO domainlist (type, domain, comment) VALUES (2, '(^|\\.)(amazonaws\\.com)\$', 'AWS');"
+sqlite3 $DB "INSERT INTO domainlist (type, domain, comment) VALUES (2, '(^|\\.)(sentry\\.io)\$', 'Sentry');"
+
+# OS packages
+sqlite3 $DB "INSERT INTO domainlist (type, domain, comment) VALUES (2, '(^|\\.)(ubuntu\\.com|canonical\\.com|launchpad\\.net)\$', 'Ubuntu packages');"
+sqlite3 $DB "INSERT INTO domainlist (type, domain, comment) VALUES (2, '(^|\\.)(debian\\.org)\$', 'Debian packages');"
+
+# BLOCK ALL (regex deny-all - everything not whitelisted above is blocked)
+sqlite3 $DB "INSERT INTO domainlist (type, domain, comment) VALUES (3, '.*', 'Block all - whitelist only mode');"
+
+pihole reloadlists
+echo -e "${GREEN}Pi-hole whitelist-only mode configured${NC}"
 
 # ============================================
 # 1.6 SSH Hardening

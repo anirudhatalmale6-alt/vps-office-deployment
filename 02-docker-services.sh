@@ -22,6 +22,7 @@ set -e
 # ======== CONFIGURATION ========
 MAIL_DOMAIN="mail.malspy.com"
 GIT_DOMAIN="git.malspy.com"
+CHAT_DOMAIN="chat.malspy.com"
 # ================================
 
 RED='\033[0;31m'
@@ -81,8 +82,8 @@ echo -e "${YELLOW}Enter your mail hostname: $MAIL_DOMAIN${NC}"
 read -p "Press Enter to continue..."
 ./generate_config.sh
 
-# Add Gitea domain for SSL
-sed -i "s/^ADDITIONAL_SAN=.*/ADDITIONAL_SAN=$GIT_DOMAIN/" mailcow.conf
+# Add Gitea and Chat domains for SSL
+sed -i "s/^ADDITIONAL_SAN=.*/ADDITIONAL_SAN=$GIT_DOMAIN,$CHAT_DOMAIN/" mailcow.conf
 
 echo -e "${GREEN}Pulling Mailcow containers (this takes a while)...${NC}"
 docker compose pull
@@ -143,9 +144,64 @@ sleep 10
 docker compose ps
 
 # ============================================
-# 2.4 Nginx Reverse Proxy for Gitea
+# 2.4 Install Rocket.Chat
 # ============================================
-echo -e "${GREEN}[4/5] Configuring Nginx reverse proxy for Gitea...${NC}"
+echo -e "${GREEN}[4/7] Installing Rocket.Chat...${NC}"
+mkdir -p /opt/rocketchat
+cd /opt/rocketchat
+
+cat > docker-compose.yml << EOF
+
+services:
+  rocketchat:
+    image: registry.rocket.chat/rocketchat/rocket.chat:latest
+    container_name: rocketchat
+    restart: always
+    environment:
+      - ROOT_URL=https://$CHAT_DOMAIN
+      - PORT=3100
+      - MONGO_URL=mongodb://mongodb:27017/rocketchat?replicaSet=rs0
+      - MONGO_OPLOG_URL=mongodb://mongodb:27017/local?replicaSet=rs0
+      - DEPLOY_METHOD=docker
+    depends_on:
+      - mongodb
+    ports:
+      - "127.0.0.1:3100:3100"
+    networks:
+      - default
+      - mailcow-network
+
+  mongodb:
+    image: mongo:7.0
+    container_name: rocketchat-mongo
+    restart: always
+    command: mongod --replSet rs0 --oplogSize 128
+    volumes:
+      - mongodb_data:/data/db
+
+volumes:
+  mongodb_data:
+
+networks:
+  mailcow-network:
+    external: true
+    name: $MAILCOW_NETWORK
+EOF
+
+docker compose up -d
+sleep 10
+
+# Initialize MongoDB replica set
+docker exec rocketchat-mongo mongosh --eval "rs.initiate()" 2>/dev/null || true
+
+echo "Waiting for Rocket.Chat to start (2 minutes)..."
+sleep 120
+docker compose ps
+
+# ============================================
+# 2.5 Nginx Reverse Proxy for Gitea
+# ============================================
+echo -e "${GREEN}[5/7] Configuring Nginx reverse proxy for Gitea...${NC}"
 
 cd /opt/mailcow-dockerized
 
@@ -182,6 +238,42 @@ server {
 }
 EOF
 
+# ============================================
+# 2.6 Nginx Reverse Proxy for Rocket.Chat
+# ============================================
+echo -e "${GREEN}[6/7] Configuring Nginx reverse proxy for Rocket.Chat...${NC}"
+
+cat > data/conf/nginx/rocketchat.conf << EOF
+server {
+    listen 80;
+    server_name $CHAT_DOMAIN;
+    return 301 https://\$host\$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+
+    server_name $CHAT_DOMAIN;
+
+    ssl_certificate /etc/ssl/mail/cert.pem;
+    ssl_certificate_key /etc/ssl/mail/key.pem;
+
+    client_max_body_size 200M;
+
+    location / {
+        proxy_pass http://rocketchat:3100;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+    }
+}
+EOF
+
 # Test and reload Nginx
 docker compose exec -T nginx-mailcow nginx -t
 docker compose exec -T nginx-mailcow nginx -s reload
@@ -191,13 +283,15 @@ echo "Verifying..."
 sleep 3
 GITEA_TITLE=$(curl -sk https://$GIT_DOMAIN 2>&1 | grep -o '<title>[^<]*</title>')
 MAIL_TITLE=$(curl -sk https://$MAIL_DOMAIN 2>&1 | grep -o '<title>[^<]*</title>')
-echo "Gitea page: $GITEA_TITLE"
+CHAT_TITLE=$(curl -sk --resolve $CHAT_DOMAIN:443:127.0.0.1 https://$CHAT_DOMAIN 2>&1 | grep -o '<title>[^<]*</title>')
 echo "Mailcow page: $MAIL_TITLE"
+echo "Gitea page: $GITEA_TITLE"
+echo "Rocket.Chat page: $CHAT_TITLE"
 
 # ============================================
-# 2.5 Firewall Rules
+# 2.7 Firewall Rules
 # ============================================
-echo -e "${GREEN}[5/5] Configuring firewall...${NC}"
+echo -e "${GREEN}[7/7] Configuring firewall...${NC}"
 apt install -y ufw
 ufw default deny incoming
 ufw default allow outgoing
@@ -231,11 +325,13 @@ echo "=============================================="
 echo -e "${NC}"
 echo ""
 echo "Services:"
-echo "  Mailcow:  https://$MAIL_DOMAIN (admin/moohoo - CHANGE THIS!)"
-echo "  Gitea:    https://$GIT_DOMAIN (complete setup in browser)"
-echo "  Pi-hole:  http://10.10.0.1:8080/admin (VPN required)"
+echo "  Mailcow:      https://$MAIL_DOMAIN (admin/moohoo - CHANGE THIS!)"
+echo "  Gitea:        https://$GIT_DOMAIN (complete setup in browser)"
+echo "  Rocket.Chat:  https://$CHAT_DOMAIN (complete setup in browser)"
+echo "  Pi-hole:      http://10.10.0.1:8080/admin (VPN required)"
 echo ""
 echo -e "${YELLOW}IMPORTANT: Complete Gitea setup by visiting https://$GIT_DOMAIN${NC}"
+echo -e "${YELLOW}IMPORTANT: Complete Rocket.Chat setup by visiting https://$CHAT_DOMAIN${NC}"
 echo -e "${YELLOW}IMPORTANT: Change Mailcow admin password!${NC}"
 echo ""
 echo -e "${YELLOW}Next: Run 03-add-employee.sh to add VPN employees${NC}"

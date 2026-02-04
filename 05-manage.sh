@@ -26,10 +26,12 @@ show_help() {
     echo "  list-allowed  - List allowed domains"
     echo "  restart-mail  - Restart Mailcow"
     echo "  restart-git   - Restart Gitea"
+    echo "  restart-chat  - Restart Rocket.Chat"
     echo "  restart-vpn   - Restart WireGuard"
     echo "  restart-nginx - Restart Nginx (fix routing issues)"
     echo "  logs-mail     - View Mailcow logs"
     echo "  logs-git      - View Gitea logs"
+    echo "  logs-chat     - View Rocket.Chat logs"
     echo "  add-employee  - Run employee setup script"
     echo ""
 }
@@ -47,6 +49,9 @@ case "$1" in
         echo ""
         echo -e "${GREEN}=== Gitea ===${NC}"
         cd /opt/gitea && docker compose ps --format "table {{.Name}}\t{{.Status}}" 2>/dev/null
+        echo ""
+        echo -e "${GREEN}=== Rocket.Chat ===${NC}"
+        cd /opt/rocketchat && docker compose ps --format "table {{.Name}}\t{{.Status}}" 2>/dev/null
         echo ""
         echo -e "${GREEN}=== Firewall ===${NC}"
         ufw status
@@ -91,6 +96,11 @@ case "$1" in
         echo -e "${GREEN}Gitea restarted${NC}"
         ;;
 
+    restart-chat)
+        cd /opt/rocketchat && docker compose restart
+        echo -e "${GREEN}Rocket.Chat restarted${NC}"
+        ;;
+
     restart-vpn)
         systemctl restart wg-quick@wg0
         wg show
@@ -108,6 +118,10 @@ case "$1" in
 
     logs-git)
         cd /opt/gitea && docker compose logs --tail 50
+        ;;
+
+    logs-chat)
+        cd /opt/rocketchat && docker compose logs --tail 50
         ;;
 
     add-employee)
